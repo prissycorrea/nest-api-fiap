@@ -1,11 +1,19 @@
 import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { users } from '@prisma/client';
-import { PrismaService } from 'src/prisma.service';
-
+import { PrismaService } from '../prisma.service';
+import * as bcrypt from 'bcrypt';
+import { EmailService } from '../email/email.service';
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) {}
-  async getUserById(id: string) {
+  constructor(
+    private prisma: PrismaService,
+    private emailService: EmailService,
+  ) {}
+
+  // findUnique é um método do prisma que retorna um registro único, que contém a constraint unique.
+  // findFirst é um método do prisma que retorna o primeiro registro que satisfaz a condição.
+
+  async getUserById(id: string): Promise<users> {
     const user = await this.prisma.users.findUnique({
       where: {
         id: Number(id),
@@ -13,33 +21,52 @@ export class UsersService {
     });
 
     if (!user) {
-      throw new HttpException('Usuário não encontrado.', HttpStatus.NOT_FOUND);
+      throw new HttpException('Usuário não encontrado', HttpStatus.NOT_FOUND);
     }
+
     return user;
   }
 
   async verifyUserExists(email: string): Promise<boolean> {
     const user = await this.prisma.users.findUnique({
-      //procure alguém onde o email seja igual ao email que eu passei
       where: {
         email,
       },
     });
-    return user ? true : false; //se não existir, retorna falso. Se existir, retorna verdadeiro
+
+    return user ? true : false;
   }
+
+  async crypto(password: string): Promise<string> {
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(password, salt);
+    return hashedPassword;
+  }
+
   async createUser(data): Promise<users> {
-    //essa função retorna uma promessa, porque tem uma intenção de cadastrar um usuário, mas nao sei se está certo, se estiver certo retorna o usuário, se não estiver certo retorna um erro
     const { name, email, password } = data;
+
     const checkUser = await this.verifyUserExists(email);
 
     if (!checkUser) {
       const user = await this.prisma.users.create({
         data: {
-          name, //o banco entende name: name, se fosse outro nome atribuido, deveria ser name: outroNome
+          name,
           email,
-          password,
+          password: await this.crypto(password),
         },
       });
+
+      if (
+        await this.emailService.sendEmail(
+          email,
+          'Bem vindo ao sistema',
+          'Seja muito bem vindo',
+          {},
+        )
+      ) {
+        console.log('Email, enviado com sucesso!');
+      }
 
       if (!user) {
         throw new Error('Erro ao criar usuário.');
@@ -51,11 +78,11 @@ export class UsersService {
   }
 
   async findAll() {
-    return this.prisma.users.findMany();
+    return await this.prisma.users.findMany();
   }
 
   async findOne(id: string) {
-    return this.prisma.users.findUnique({
+    return await this.prisma.users.findUnique({
       where: {
         id: Number(id),
       },
@@ -63,11 +90,13 @@ export class UsersService {
   }
 
   async update(id: string, req) {
-    //carregue os dados do usuário cujo id foi informado
+    //carregue os dados do usuário cujo id foi informado.
     const user = await this.getUserById(id);
-    //extraindo as novas informações para alterar o usuário
+    //extraindo as novas informações para alterar o usuário.
+
     const { name, email, password } = req;
-    const updateUser = await this.prisma.users.update({
+
+    const updatedUser = await this.prisma.users.update({
       where: {
         id: Number(id),
       },
@@ -78,29 +107,32 @@ export class UsersService {
       },
     });
 
-    if (!updateUser) {
+    if (!updatedUser) {
       throw new HttpException(
-        'Erro ao atualizar usuário.',
+        'Erro ao atualizar usuário',
         HttpStatus.BAD_REQUEST,
       );
     }
-    return { msg: `Usuário ${updateUser.name} atualizado com sucesso.` };
+
+    return { msg: `Usuário ${updatedUser.name} atualizado com sucesso!` };
   }
 
-  async remove(id: string) {
+  async remove(id: string): Promise<object> {
     const user = await this.getUserById(id);
-    const deleteUser = await this.prisma.users.delete({
+
+    const deletedUser = await this.prisma.users.delete({
       where: {
         id: Number(id),
       },
     });
 
-    if (!deleteUser) {
+    if (!deletedUser) {
       throw new HttpException(
-        'Erro ao deletar usuário.',
+        'Erro ao deletar usuário',
         HttpStatus.BAD_REQUEST,
       );
     }
-    return `Usuário ${user.name} excluído com sucesso.`;
+
+    return { msg: `Usuário ${user.name} Excluído com sucesso!` };
   }
 }

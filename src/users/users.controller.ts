@@ -40,8 +40,6 @@ export class UsersController {
   //deletar
   @Delete(':id')
   async remove(@Param('id') id: string) {
-    return this.usersService.update(id);
+    return this.usersService.remove(id);
   }
 }
-
-//name, price, description, categoryID
